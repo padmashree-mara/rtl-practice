@@ -59,80 +59,45 @@ module sync_fifo_tb;
         @(posedge clk);
 
        // case normal operation 
-        wr_en <= 1;
-        do_write(4);
-        wr_en <= 0;
-        
-        @(posedge clk);
-        rd_en <= 1;
-        repeat(4)
-        @(posedge clk);
-        rd_en <= 0;
-        
+        write_n(4);
+        read_n(4);       
+              
         // case empty read rejection
         @(posedge clk);
-        rd_en <= 1;
-        repeat(2)
-        @(posedge clk);
-        rd_en <= 0;
+        read_n(2);
         
         //case fill to full
         @(posedge clk);
-        wr_en <= 1;
-        do_write(8);
-        wr_en <= 0;
+        write_n(8);
         
         // case write while full
         @(posedge clk);
-        wr_en <= 1;
-        do_write(2);
-        wr_en <= 0;
+        write_n(2);
         
         //simultaneous read and write while full
         @(posedge clk);
-        rd_en <= 1;
-        wr_en <= 1;
-        do_write(1);
-        rd_en <= 0;
-        wr_en <= 0;
+        read_write_one($urandom());
         
         // case drain to empty
-        @(posedge clk);
-        rd_en <= 1;
-        repeat(7)
-        @(posedge clk);
-        rd_en <= 0;
+        read_n(7);
         
         //simultaneous read and write while empty
         @(posedge clk);
-        rd_en <= 1;
-        wr_en <= 1;
-        do_write(1);
-        rd_en <= 0;
-        wr_en <= 0;
-        
+        read_write_one($urandom());
+
         // pointer wraparound
         @(posedge clk);
-        wr_en <= 1;
-        do_write(8);
-        wr_en <= 0;
+        write_n(8);
         
         @(posedge clk);
-        rd_en <= 1;
-        repeat(4)
-        @(posedge clk);
-        rd_en <= 0;
+        read_n(2);
         
         @(posedge clk);
-        wr_en <= 1;
-        do_write(3); 
-        wr_en <= 0;
+        write_n(3);
         
         @(posedge clk);
-        rd_en <= 1;
-        repeat(6) 
-        @(posedge clk);
-        rd_en <= 0;
+        read_n(3);
+       
         
         // rst while partially filled
         @(posedge clk);
@@ -140,46 +105,62 @@ module sync_fifo_tb;
         @(posedge clk);
         rst <= 0;
         @(posedge clk);
-        wr_en <= 1;
-        do_write(5);  
-        wr_en <= 0;
+        write_n(5);
         
         @(posedge clk);
-        rd_en <= 1;
-        repeat(4)  
-        @(posedge clk);
-        rd_en <= 0;
+        read_n(4);
+
         
          //simultaneous read and write while partially filled
         @(posedge clk);
-        rd_en <= 1;
-        wr_en <= 1;
-        do_write(1);
-        rd_en <= 0;
-        wr_en <= 0;
+        read_write_one($urandom());
         
         @(posedge clk);
-        wr_en <= 1;
-        do_write(2);  
-        wr_en <= 0;
-        
-        
-        
+        write_n(2);
         
         repeat(5) @(posedge clk);
     
         $display("PASS: FIFO test completed");
         $finish;
-            
        
     end
     
-    task automatic do_write (input int n);
-        repeat (n) begin
-            data_in <= $urandom();
-            @(posedge clk);
+    task automatic write_one (input logic [7:0] data);
+        wr_en <= 1;
+        rd_en <= 0;
+        data_in <= data;
+        @(posedge clk);
+        wr_en <= 0;
+    endtask: write_one
+    
+    task automatic read_one ();
+        wr_en <= 0;
+        rd_en <= 1;
+        @(posedge clk);
+        rd_en <= 0;
+    endtask: read_one
+    
+    task automatic read_write_one ( input logic [7:0] data );
+        wr_en <= 1;
+        rd_en <= 1;
+        data_in <= data;
+        @(posedge clk);
+        rd_en <= 0;
+        wr_en <= 0;
+    endtask: read_write_one
+    
+    
+    task automatic write_n(input int n);
+        repeat(n) begin
+            write_one($urandom());
         end
-    endtask: do_write
+    endtask: write_n
+    
+    task automatic read_n(input int n);
+        repeat(n) begin
+            read_one();
+        end
+    endtask: read_n
     
 
     //*********************REFERENCE MODEL******************************
@@ -189,45 +170,33 @@ module sync_fifo_tb;
       logic exp_fifo_full;
       logic exp_fifo_empty;
       logic exp_rd_vld;
+      logic exp_rd;
+      logic exp_wr;
 
     always @ (posedge clk) begin 
         if (rst) begin
             exp_fifo_q.delete();
-            exp_data =0;
-            exp_fifo_full = 0;
-            exp_fifo_empty = 1;
-            exp_rd_vld = 0;
-            
+            exp_data        =0;
+            exp_fifo_full   = 0;
+            exp_fifo_empty  = 1;
+            exp_rd_vld      = 0;
+            exp_rd          = 0;
+            exp_wr          = 0;
         end
       
-        else begin 
+        else begin
             exp_rd_vld = 0;
-            case ({rd_en, wr_en})
-                2'b00:  begin
-                        end
-                2'b01:  begin
-                            if(!exp_fifo_full) begin
-                                exp_fifo_q.push_back(data_in);
-                            end
-                        end
-                2'b10:  begin
-                            if(!exp_fifo_empty) begin
-                                exp_data = exp_fifo_q.pop_front();
-                                exp_rd_vld = 1;
-                            end
-                        end
-                2'b11:  begin
-                            if(!exp_fifo_empty) begin
-                                exp_data = exp_fifo_q.pop_front();
-                                exp_rd_vld = 1;
-                            end
-                            if(!exp_fifo_full) begin
-                                exp_fifo_q.push_back(data_in);
-                            end
-                        end
-            endcase
+            exp_rd = rd_en && !exp_fifo_empty;
+            exp_wr = wr_en && !exp_fifo_full;
+            
+            if (exp_rd)begin
+               exp_data = exp_fifo_q.pop_front();
+               exp_rd_vld = 1;
+            end
+            if (exp_wr) begin
+                exp_fifo_q.push_back(data_in);
+            end
         end
-        
         exp_fifo_full = (exp_fifo_q.size() == 8)? 1 : 0;  
         exp_fifo_empty = (exp_fifo_q.size() == 0)? 1 : 0;  
     
